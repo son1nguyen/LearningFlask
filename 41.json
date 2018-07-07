@@ -1,0 +1,50 @@
+{
+  "build_status": null,
+  "build_url": "http://4-1-builds.corp.rubrik.com/job/Build_CDM/2360",
+  "build_number": 2360,
+  "job_name": "Build_CDM",
+  "downstream_jobs": [
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "Build_CDM_AMI"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "Build_CDM_Edge_Esx"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "Build_SD_Dev_Image"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "Atlas_Smoke"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "BlobStoreTests"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "acceptance_test"
+    },
+    {
+      "build_status": null,
+      "build_url": null,
+      "build_number": null,
+      "job_name": "Crystal_Acceptance"
+    }
+  ]
+}
