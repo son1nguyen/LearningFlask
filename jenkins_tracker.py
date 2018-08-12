@@ -1,27 +1,30 @@
 #!/usr/bin/env python
 
 """Jenkins utilities."""
-
 import json
-import sys
+import logging
+import subprocess
 import time
 import traceback
-import logging
-import requests
+from datetime import datetime
+from os.path import expanduser
 
+import requests
 from bs4 import BeautifulSoup
 from jenkinsapi.jenkins import Jenkins
+from pathlib import Path
 
 ES_DB = 'http://10.0.65.183:9200/'
 
 
 class DownstreamBuild:
 
-    def __init__(self, job_name, build_number, build_status, build_url):
+    def __init__(self, job_name, build_number, build_status, build_url, started_time):
         self.job_name = job_name
         self.build_number = build_number
         self.build_status = build_status
         self.build_url = build_url
+        self.started_time = started_time
 
     def encodeJSON(self):
         return self.__dict__
@@ -30,19 +33,23 @@ class DownstreamBuild:
 class BuildPipeline:
 
     def __init__(self, branch, job_name=None, description=None,
-                 build_number=None, build_status=None, build_url=None):
+                 build_number=None, build_status=None, build_url=None,
+                 download_url=None, started_time=None):
         self.branch = branch
         self.job_name = job_name
         self.description = description
         self.build_number = build_number
         self.build_status = build_status
         self.build_url = build_url
+        self.download_url = download_url
+        self.started_time = started_time
         self.downstream_builds = []
 
     def encodeJSON(self):
         return dict(branch=self.branch, job_name=self.job_name, description=self.description,
-                    build_number=self.build_number, build_status=self.build_status, build_url=self.build_url,
-                    downstream_builds=self.downstream_builds)
+                    build_number=self.build_number, build_status=self.build_status,
+                    build_url=self.build_url, download_url=self.download_url,
+                    started_time=self.started_time, downstream_builds=self.downstream_builds)
 
 
 class BuildPipelineEncoder(json.JSONEncoder):
@@ -84,7 +91,7 @@ class JenkinsTracker:
     #     last_build_downstream_url = last_build.baseurl + '/downstreambuildview/'
     #     downstream_page = requests.get(last_build_downstream_url)
     #     soup = BeautifulSoup(downstream_page.content, 'html.parser')
-    #     self._log.debug('Successfully download ' + last_build_downstream_url + ' page content')
+    #     print('Successfully download ' + last_build_downstream_url + ' page content')
     #
     #     downstream_job_names = []
     #     downstream_job_list = []
@@ -97,10 +104,10 @@ class JenkinsTracker:
     #             downstream_job.build_ids.append(build.buildno)
     #             downstream_job.build_status.append(build.get_status())
     #             downstream_job.build_urls.append(build.baseurl)
-    #         self._log.debug(json.dumps(downstream_job.__dict__))
+    #         print(json.dumps(downstream_job.__dict__))
     #         downstream_job_list.append(downstream_job)
     #
-    #     self._log.debug(json.dumps([downstream_job.__dict__ for downstream_job in downstream_job_list]))
+    #     print(json.dumps([downstream_job.__dict__ for downstream_job in downstream_job_list]))
     #
     # def _get_leaf_job_names(self, div_element, downstream_job_names):
     #     child_divs = list(div_element.find_all('div', recursive=False))
@@ -113,12 +120,13 @@ class JenkinsTracker:
     #             self._get_leaf_job_names(div, downstream_job_names)
 
     def save_pipeline_result(self, pipeline):
-        self._log.debug('Saving to elastic search\n' + json.dumps(pipeline.encodeJSON(), cls=BuildPipelineEncoder))
+        print('Saving to elastic search\n' + json.dumps(pipeline.encodeJSON(), cls=BuildPipelineEncoder))
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(url=ES_DB + pipeline.branch + '/' + pipeline.job_name + '/' + str(pipeline.build_number),
-                                 data=json.dumps(pipeline.encodeJSON(), cls=BuildPipelineEncoder),
-                                 headers=headers)
-        self._log.debug(response.json())
+        response = requests.post(
+            url=ES_DB + pipeline.branch + '/' + pipeline.job_name + '/' + str(pipeline.build_number),
+            data=json.dumps(pipeline.encodeJSON(), cls=BuildPipelineEncoder),
+            headers=headers)
+        print(response.json())
 
     def get_latest_builds(self, job_name):
         """Get the status of a pipeline including it's root and leaf builds.
@@ -130,21 +138,45 @@ class JenkinsTracker:
         build_numbers = list(job.get_build_ids())
 
         build_pipeline_list = []
-        for build_number in build_numbers[0:50]:
+        for build_number in build_numbers[0:10]:
             try:
-                self._log.debug('----- ' + self.branch + ' ' + job_name +
-                                ' ' + str(build_number) + ' -----')
+                print('----- ' + self.branch + ' ' + job_name +
+                      ' ' + str(build_number) + ' -----')
                 downstream_page_url = job.baseurl + '/' + str(build_number) + '/downstreambuildview/'
                 downstream_page = requests.get(downstream_page_url)
                 soup = BeautifulSoup(downstream_page.content, 'html.parser')
-                self._log.debug('Successfully download page content')
+                print('Successfully download page content')
 
-                build_pipeline = BuildPipeline(branch=self.branch, job_name=job_name, description=job.get_build(build_number).get_description(),
-                                               build_number=build_number, build_status=job.get_build(build_number).get_status(),
-                                               build_url=job.get_build(build_number).baseurl)
+                root_job = job.get_build(build_number)
+                build_pipeline = BuildPipeline(branch=self.branch, job_name=job_name,
+                                               description=root_job.get_description(),
+                                               build_number=build_number, build_status=root_job.get_status(),
+                                               build_url=root_job.baseurl,
+                                               started_time=root_job.get_timestamp().strftime("%b %d %H:%M:%S %Z %Y"))
 
                 self._get_latest_builds_util(soup.select('table .pane')[0], build_pipeline.downstream_builds)
+                score = 0
+                if build_pipeline.build_status == 'SUCCESS':
+                    for downstream_build in build_pipeline.downstream_builds:
+                        if (downstream_build.job_name == 'Crystal_Acceptance' or
+                            downstream_build.job_name == 'Edge_Fileset_Smoke_Aws') and \
+                                downstream_build.build_status == 'SUCCESS':
+                            score += 1
 
+                if score >= 1:
+                    home_dir = expanduser("~")
+
+                    print 'Build {} is a good build with score +{}'.format(build_pipeline.build_number, score)
+                    stored_dir = '{}/builds/{}/{}/{}'.format(home_dir, build_pipeline.branch,
+                                                             build_pipeline.job_name, build_pipeline.build_number)
+                    artifact_url = '{}/artifact/*zip*/archive.zip'.format(build_pipeline.build_url)
+                    artifact_file = Path(stored_dir)
+                    if artifact_file.exists() is False:
+                        print 'Store artifact {} in {}'.format(artifact_url, stored_dir)
+                        print subprocess.check_output(['wget', '-P', stored_dir, artifact_url])
+                        build_pipeline.download_url = stored_dir + '/archive.zip'
+                    else:
+                        print 'Artifact already exists in {}'.format(stored_dir)
                 self.save_pipeline_result(build_pipeline)
             except Exception as e:
                 traceback.print_exc()
@@ -164,7 +196,7 @@ class JenkinsTracker:
             job_name = build_info[0]
 
             if 'NOT_BUILT' in div_element.text.strip():
-                build_pipeline.append(DownstreamBuild(job_name, None, None, None))
+                build_pipeline.append(DownstreamBuild(job_name, None, None, None, None))
                 return
 
             build_number = build_info[3]
@@ -172,10 +204,12 @@ class JenkinsTracker:
 
             build = None
             if 'counting' in div_element.text.strip():
-                build = DownstreamBuild(job_name, build_number, 'RUNNING', build_url)
+                started_time = div_element.text.strip().split('(')[1].split(')')[0]
+                build = DownstreamBuild(job_name, build_number, 'RUNNING', build_url, started_time)
             else:
+                started_time = div_element.text.strip().split('(')[1][4:28]
                 build_status = build_info[11][0:len(build_info[11]) - 1]
-                build = DownstreamBuild(job_name, build_number, build_status, build_url)
+                build = DownstreamBuild(job_name, build_number, build_status, build_url, started_time)
 
             build_pipeline.append(build)
         else:
@@ -184,8 +218,32 @@ class JenkinsTracker:
 
 
 if __name__ == '__main__':
+
     try:
-        jenkins_tracker_42 = JenkinsTracker('http://4-1-builds.corp.rubrik.com/', '41', 'build_cdm.log')
-        jenkins_tracker_42.get_latest_builds('Build_CDM')
+        while True:
+            print('START POLLING DATA AT ' + str(datetime.now()))
+            try:
+                jenkins_tracker_master = JenkinsTracker('http://master-builds.corp.rubrik.com/', 'master',
+                                                        'build_cdm.log')
+                jenkins_tracker_master.get_latest_builds('Build_CDM')
+            except Exception as e:
+                traceback.print_exc()
+
+            try:
+                jenkins_tracker_42 = JenkinsTracker('http://4-2-builds.corp.rubrik.com/', '42', 'build_cdm.log')
+                jenkins_tracker_42.get_latest_builds('Build_CDM')
+            except Exception as e:
+                traceback.print_exc()
+
+            try:
+                jenkins_tracker_41 = JenkinsTracker('http://4-1-builds.corp.rubrik.com/', '41', 'build_cdm.log')
+                jenkins_tracker_41.get_latest_builds('Build_CDM')
+            except Exception as e:
+                traceback.print_exc()
+
+            # Sleep for 60 mins
+            print("Start sleeping for 20 mins")
+            time.sleep(20 * 60)
+
     except Exception as e:
         traceback.print_exc()

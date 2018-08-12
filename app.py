@@ -1,8 +1,9 @@
-import ast
+#!/usr/bin/env python
+
 import json
 
 import requests
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 
 import jenkins_tracker
 
@@ -26,13 +27,11 @@ def hello_world():
     return render_template('build_cdm.html')
 
 
-# @app.route('/build_cdm/<branch>', methods=['GET'])
-# def pipeline(branch='master'):
-#     print('Getting ' + branch + ' data')
-#     file = open(branch + '.txt', 'r')
-#     content = ast.literal_eval(file.read())
-#     file.close()
-#     return jsonify(content)
+@app.route('/download/<branch>/<job_name>/<build_number>', methods=['GET'])
+def pipeline(branch, job_name, build_number):
+    # /home/ubuntu/builds/master/Build_CDM/4515/archive.zip
+    return send_file(filename_or_fp='/home/ubuntu/builds/{}/{}/{}/archive.zip'.format(branch, job_name, build_number),
+                     as_attachment=True, attachment_filename='archive.zip')
 
 
 @app.route('/build_cdm/<branch>', methods=['GET'])
@@ -48,12 +47,11 @@ def get_build_cdm(branch='master'):
     response = requests.post(url=jenkins_tracker.ES_DB + branch + '/Build_CDM/_search',
                              data=json.dumps(build_cdm_payload),
                              headers=headers)
-    print(json.dumps(response.json()))
+    print(str(len(response.json()['hits']['hits'])) + ' records found')
 
     result = []
     for hit in response.json()['hits']['hits']:
         result.append(hit['_source'])
-    print(json.dumps(result))
 
     return jsonify(result)
 
@@ -64,4 +62,4 @@ def about():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', debug=True)

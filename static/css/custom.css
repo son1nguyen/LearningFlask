@@ -1,13 +1,24 @@
 body {
-    font-size: 13px;
-}
-
-table th {
-    word-break: break-all;
+    font-size: 14px;
 }
 
 table td {
+    word-break: normal;
+    word-wrap: break-word;
+}
+
+table td, th {
     text-align: center;
+    vertical-align: middle;
+    min-width: 80px;
+}
+
+td {
+    white-space: pre
+}
+
+pre {
+    margin: 0;
 }
 
 .loading {

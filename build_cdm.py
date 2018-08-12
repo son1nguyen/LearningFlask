@@ -15,7 +15,7 @@ if __name__ == '__main__':
             #     traceback.print_exc()
 
             try:
-                jenkins_tracker_42 = JenkinsTracker('http://4-2-builds.corp.rubrik.com/', 'build_cdm.log')
+                jenkins_tracker_42 = JenkinsTracker('http://4-2-builds.corp.rubrik.com/', 42, 'build_cdm.log')
                 pipeline_content = jenkins_tracker_42.get_latest_builds('Build_CDM').replace('null', 'None')
                 print(pipeline_content)
                 jenkins_tracker_42.write_result_to_file('42.txt', pipeline_content)
