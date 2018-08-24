@@ -3,6 +3,7 @@
 """Jenkins utilities."""
 import json
 import logging
+import os
 import subprocess
 import time
 import traceback
@@ -10,6 +11,7 @@ from datetime import datetime
 from os.path import expanduser
 
 import requests
+import wget
 from bs4 import BeautifulSoup
 from jenkinsapi.jenkins import Jenkins
 from pathlib import Path
@@ -138,7 +140,7 @@ class JenkinsTracker:
         build_numbers = list(job.get_build_ids())
 
         build_pipeline_list = []
-        for build_number in build_numbers[0:10]:
+        for build_number in build_numbers[0:20]:
             try:
                 print('----- ' + self.branch + ' ' + job_name +
                       ' ' + str(build_number) + ' -----')
@@ -148,7 +150,7 @@ class JenkinsTracker:
                 print('Successfully download page content')
 
                 root_job = job.get_build(build_number)
-                build_pipeline = BuildPipeline(branch=self.branch, job_name=job_name,
+                build_pipeline = BuildPipeline(branch=self.branch, job_name='Build_CDM',
                                                description=root_job.get_description(),
                                                build_number=build_number, build_status=root_job.get_status(),
                                                build_url=root_job.baseurl,
@@ -158,8 +160,8 @@ class JenkinsTracker:
                 score = 0
                 if build_pipeline.build_status == 'SUCCESS':
                     for downstream_build in build_pipeline.downstream_builds:
-                        if (downstream_build.job_name == 'Crystal_Acceptance' or
-                            downstream_build.job_name == 'Edge_Fileset_Smoke_Aws') and \
+                        if ('Crystal_Acceptance' in downstream_build.job_name or
+                            'Edge_Fileset_Smoke_Aws' in downstream_build.job_name) and \
                                 downstream_build.build_status == 'SUCCESS':
                             score += 1
 
@@ -170,13 +172,18 @@ class JenkinsTracker:
                     stored_dir = '{}/builds/{}/{}/{}'.format(home_dir, build_pipeline.branch,
                                                              build_pipeline.job_name, build_pipeline.build_number)
                     artifact_url = '{}/artifact/*zip*/archive.zip'.format(build_pipeline.build_url)
-                    artifact_file = Path(stored_dir)
+                    artifact_file = Path(stored_dir + '/archive.zip')
                     if artifact_file.exists() is False:
-                        print 'Store artifact {} in {}'.format(artifact_url, stored_dir)
-                        print subprocess.check_output(['wget', '-P', stored_dir, artifact_url])
-                        build_pipeline.download_url = stored_dir + '/archive.zip'
+                        print 'Store artifact {} in {}'.format(artifact_url, artifact_file.as_posix())
+                        # subprocess.check_output(['wget', '-P', stored_dir, artifact_url])
+                        os.makedirs(stored_dir)
+                        print wget.download(url=artifact_url, out=stored_dir)
                     else:
                         print 'Artifact already exists in {}'.format(stored_dir)
+
+                    build_pipeline.download_url = '/download/{}/{}/{}'.format(build_pipeline.branch,
+                                                                              build_pipeline.job_name,
+                                                                              build_pipeline.build_number)
                 self.save_pipeline_result(build_pipeline)
             except Exception as e:
                 traceback.print_exc()
@@ -223,21 +230,21 @@ if __name__ == '__main__':
         while True:
             print('START POLLING DATA AT ' + str(datetime.now()))
             try:
-                jenkins_tracker_master = JenkinsTracker('http://master-builds.corp.rubrik.com/', 'master',
+                jenkins_tracker_master = JenkinsTracker('http://cdm-builds.corp.rubrik.com/', 'master',
                                                         'build_cdm.log')
                 jenkins_tracker_master.get_latest_builds('Build_CDM')
             except Exception as e:
                 traceback.print_exc()
 
             try:
-                jenkins_tracker_42 = JenkinsTracker('http://4-2-builds.corp.rubrik.com/', '42', 'build_cdm.log')
-                jenkins_tracker_42.get_latest_builds('Build_CDM')
+                jenkins_tracker_42 = JenkinsTracker('http://cdm-builds.corp.rubrik.com/', '42', 'build_cdm.log')
+                jenkins_tracker_42.get_latest_builds('Build_CDM_4.2')
             except Exception as e:
                 traceback.print_exc()
 
             try:
-                jenkins_tracker_41 = JenkinsTracker('http://4-1-builds.corp.rubrik.com/', '41', 'build_cdm.log')
-                jenkins_tracker_41.get_latest_builds('Build_CDM')
+                jenkins_tracker_41 = JenkinsTracker('http://cdm-builds.corp.rubrik.com/', '41', 'build_cdm.log')
+                jenkins_tracker_41.get_latest_builds('Build_CDM_4.1')
             except Exception as e:
                 traceback.print_exc()
 

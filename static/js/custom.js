@@ -38,6 +38,11 @@ $(document).ready(function () {
                 pipeline_data = '<td class="table-secondary"><a href="' + pipeline['build_url'] + '">' + pipeline['build_number'] + '</a>';
             }
 
+            if (pipeline['download_url'] != null) {
+                pipeline_data += '<a href="' + pipeline['download_url'] + '" class="material-icons" ' +
+                    'style="display: block; text-decoration: none">cloud_download</a>'
+            }
+
             if (pipeline['description'] != null) {
                 var lines = pipeline['description'].split(' ');
                 $.each(lines, function (lineIndex) {
