@@ -4,7 +4,6 @@
 import json
 import logging
 import os
-import subprocess
 import time
 import traceback
 from datetime import datetime
@@ -15,6 +14,9 @@ import wget
 from bs4 import BeautifulSoup
 from jenkinsapi.jenkins import Jenkins
 from pathlib import Path
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 ES_DB = 'http://10.0.65.183:9200/'
 
