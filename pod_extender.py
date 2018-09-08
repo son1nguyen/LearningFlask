@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+
 import json
 import subprocess
 
@@ -25,4 +26,4 @@ if __name__ == '__main__':
         bodega_order = BodegaOrder(order_info[0].strip(), order_info[1].strip(),
                                    order_info[2].strip(), order_info[3].strip())
         print json.dumps(bodega_order.encodeJSON())
-        print subprocess.check_output([bodega_cmd, 'extend', 'order', bodega_order.sid])
+        print subprocess.check_output([bodega_cmd, 'extend', 'order', bodega_order.sid, '-t', '1d'])
